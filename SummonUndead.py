@@ -9,24 +9,30 @@ from jinja2 import Template
 
 import types
 
+import subprocess
+import time
+
 cell_template = '''
 import pickle
+from tempfile import NamedTemporaryFile
 
 {% for module in user_modules -%}
 import {{ module }}
 {% endfor %}
 
 {% for input, data in input_arguments.items() %}
-{{ input }} = {{ data }}
+{{ input }} = pickle.loads( {{ data }} )
 {% endfor %}
 
 {{ cell_code }}
 
-{% for output in output_arguments -%}
-{{ output }}
+{% for output, tmpfile in output_arguments.items() %}
+pickle.dump( {{ output }}, open( '{{ tmpfile }}', 'wb' ) )
 {%- endfor %}
-'''
 
+with open( '/tmp/alive', 'w' ) as f :
+    f.write( "I'm alive!" )
+'''
 
 @magics_class
 class SummonUndead( Magics ) :
@@ -56,11 +62,11 @@ class SummonUndead( Magics ) :
                 except KeyError :
                     raise NameError( "name '%s' is not defined" % input )
         
-        # get the user output variable names and stash them in a list
-        output_arguments = []
+        # get the user output variable names, create temp files for each
+        output_arguments = {}
         if args.output :
             for output in ','.join( args.output ).split( ',' ) :
-                output_arguments.append( output )
+                output_arguments[ output ] = NamedTemporaryFile( mode='w', suffix='.output', delete=False ).name
         
         # figure out what modules the user has loaded
         user_modules = set( key for key,value in self.shell.user_ns.items() if isinstance( value, types.ModuleType ) )
@@ -72,14 +78,33 @@ class SummonUndead( Magics ) :
                                                 input_arguments  = input_arguments,
                                                 output_arguments = output_arguments, 
                                                 cell_code        = cell ) )
-            return f.name                                                
- 
+            
+            cell_script = f.name
+           
+            # execute the cell
+            p = subprocess.Popen( [ '/usr/bin/python', str(cell_script) ],
+                                  stdout=subprocess.PIPE,
+                                  stderr=subprocess.PIPE )
+
+            print( p.communicate() )
+
+            print( f.name )
+            print( output_arguments )
+            
         # put recovered output variables into the user's namespace
-        #for output in output_arguments :        
-        #    self.shell.push({output: output_ipy})
-        
+        for output, tmpfile in output_arguments.items() :
+            self.shell.push( { output : pickle.load( open( tmpfile, 'rb' ) ) } )
+            #self.shell.push( { output : open( tmpfile ) } )
+
     @line_magic
     def summon_undead( self, line ) :
+
+        p = subprocess.Popen( [ 'uname', '-a' ],
+                              stdout=subprocess.PIPE,
+                              stderr=subprocess.PIPE )
+
+        return( p.communicate() )
+
         return 'Army of undead summoned. ' 
 
 def load_ipython_extension( ip ) :

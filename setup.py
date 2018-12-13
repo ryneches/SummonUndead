@@ -10,5 +10,6 @@ setup(
     name             = 'SummonUndead',
     py_modules       = [ 'SummonUndead' ],
     requires         = [ 'ipython' ],
+    url              = 'https://github.com/ryneches/SummunUndead',
     version          = '0.1'
 )
