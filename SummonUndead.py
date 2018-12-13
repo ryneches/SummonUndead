@@ -79,18 +79,16 @@ class SummonUndead( Magics ) :
                                                 output_arguments = output_arguments, 
                                                 cell_code        = cell ) )
             
-            cell_script = f.name
-           
-            # execute the cell
-            p = subprocess.Popen( [ '/usr/bin/python', str(cell_script) ],
-                                  stdout=subprocess.PIPE,
-                                  stderr=subprocess.PIPE )
-
-            print( p.communicate() )
-
-            print( f.name )
-            print( output_arguments )
             
+            cell_script = f.name
+        
+        # execute the cell
+        p = subprocess.Popen( [ 'python', str(cell_script) ],
+                              stdout=subprocess.PIPE,
+                              stderr=subprocess.PIPE )
+
+        p.communicate()
+        
         # put recovered output variables into the user's namespace
         for output, tmpfile in output_arguments.items() :
             self.shell.push( { output : pickle.load( open( tmpfile, 'rb' ) ) } )
@@ -98,13 +96,7 @@ class SummonUndead( Magics ) :
 
     @line_magic
     def summon_undead( self, line ) :
-
-        p = subprocess.Popen( [ 'uname', '-a' ],
-                              stdout=subprocess.PIPE,
-                              stderr=subprocess.PIPE )
-
-        return( p.communicate() )
-
+        
         return 'Army of undead summoned. ' 
 
 def load_ipython_extension( ip ) :
