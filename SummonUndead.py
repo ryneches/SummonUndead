@@ -63,29 +63,32 @@ class SummonUndead( Magics ) :
         print(args)
 
         # input should be a list of dictionaries
-        input_vector = [] 
+        input_params = [] 
         if args.params :
             try :
-                input_vector = self.shell.user_ns[ args.params ]
+                user_input = self.shell.user_ns[ args.params ]
                 
-                if not isinstance( input_vector, list ) :
+                if not isinstance( user_input, list ) :
                     raise NameError( 'Input vector must be a list of dictionaries.' )
                 
-                if len( input_vector ) == 0 :
+                if len( user_input ) == 0 :
                     raise NameError( 'Input cannot be empty.' )
                 
-                if not isinstance( input_vector[0], dict ) :
+                if not isinstance( user_input[0], dict ) :
                     raise NameError( 'Input vector must be a list of dictionaries.' )
                 
-                for run in input_vector :
+                for run in user_input :
+                    run_params = {}
                     for key, value in run.items() :
-                        run[key] = pickle.dumps( value )
+                        run_params[ key ] = pickle.dumps( value )
+                    input_params.append( run_params )
                 
             except KeyError :
                 raise NameError( "name '%s' is not defined" % args.input )
         
         if args.debug :
-            print( 'input_vector :', input_vector )
+            print( 'user_input :', user_input )
+            print( 'input_params :', input_params )
         
         # get the user output variable names, create temp files for each
         output = {}
@@ -107,10 +110,10 @@ class SummonUndead( Magics ) :
             raise NameError( 'Unknown execution mode : %s' % args.mode )
         
         if args.mode == 'local_serial' :
-            output_vector = self._execute_local_serial(   cell, input_vector, output, modules, None,
+            output_vector = self._execute_local_serial(   cell, input_params, output, modules, None,
                                                           debug=args.debug )
         elif args.mode == 'local_parallel' :
-            output_vector = self._execute_local_parallel( cell, input_vector, output, modules, None,
+            output_vector = self._execute_local_parallel( cell, input_params, output, modules, None,
                                                           debug=args.debug )
 
         self.shell.push( { args.label + '_output' : output_vector } )
