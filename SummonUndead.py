@@ -12,7 +12,7 @@ import types
 import subprocess
 import time
 
-import concurrent.futures
+from joblib import Parallel, delayed
 
 import pyprind
 
@@ -60,8 +60,6 @@ class SummonUndead( Magics ) :
         
         args = parse_argstring( self.moan, line )
     
-        print(args)
-
         # input should be a list of dictionaries
         input_params = [] 
         if args.params :
@@ -165,11 +163,17 @@ class SummonUndead( Magics ) :
     def _execute_local_parallel( self, code_cell, params, output, modules, cpus, debug=False ) :
         '''Execute code cell locally with concurrency.'''
         
-        args = [ ( code_cell, p, output, modules ) for p in params ]
+        def _exe( p ) :
+            stdout, stderr = self._execute( code_cell, p, output, modules )
+            
+            if debug :
+                print( 'stdout :', stdout )
+                print( 'stderr :', stderr )
+
+            return pickle.load( open( output['pickle'], 'rb' ) )
+
+        return Parallel( n_jobs=cpus )( delayed( _exe )( p ) for p in params )
         
-        with concurrent.futures.ProcessPoolExecutor( max_workers=cpus ) as executor :
-            executor.map( self._execute, args )
-    
 def load_ipython_extension( ip ) :
     '''Load extension in IPython.'''
     summon_undead = SummonUndead( ip )
