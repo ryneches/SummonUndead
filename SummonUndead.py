@@ -87,7 +87,7 @@ class Undead :
     def shuffle( self, run_params ) :
         
         return self._execute( self.code_cell, run_params )
-
+    
     def _execute( self, cell_code, params ) :
         '''Execute the cell code.'''
         
@@ -175,7 +175,7 @@ class SummonUndead( Magics ) :
         if args.debug :
             print( 'user_input :', user_input )
             print( 'params :', params )
-
+        
         if not args.mode in [ 'local_serial', 'local_parallel' ] :
             raise NameError( 'Unknown execution mode : %s' % args.mode )
         
@@ -183,7 +183,7 @@ class SummonUndead( Magics ) :
             output_vector = self._execute_local_serial( cell, params, debug=args.debug )
         elif args.mode == 'local_parallel' :
             output_vector = self._execute_local_parallel( cell, params, args.cpus, debug=args.debug )
-
+        
         self.shell.push( { args.label + '_output' : output_vector } )
     
     @line_magic
@@ -221,22 +221,18 @@ class SummonUndead( Magics ) :
 
         r = aprun( total=len(params) )(delayed( undead.shuffle )( p ) for p in params )
         
-        ## FIXME : make sure output from different runs doesn't end up being written to the
-        ##         same pickle file
-        
         if debug :
             for stdout, stderr in r :
                 print( 'stdout :', stdout )
                 print( 'stderr :', stderr )
-
+        
         output_vector = []
         for p in params :
-
+            
             run_output = pickle.load( open( p['output_pickle'], 'rb' ) )
             output_vector.append( run_output )
-
+        
         return output_vector
-
 
 def load_ipython_extension( ip ) :
     '''Load extension in IPython.'''
