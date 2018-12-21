@@ -20,6 +20,12 @@ from joblib import wrap_non_picklable_objects
 #import pyprind
 from tqdm import tqdm_notebook as tqdm
 
+try :
+    import pyslurm
+    HAS_PYSLURM = True
+except ImportError :
+    HAS_PYSLURM = False
+
 cell_template = '''
 import pickle
 from tempfile import NamedTemporaryFile
@@ -32,7 +38,7 @@ import {{ module }}
 {{ name }} = pickle.loads( {{ value }} )
 {% endfor %}
 
-{{ cell_code }}
+{{ code_cell }}
 
 _output = {}
 {% for var in params['output_vars'] %}
@@ -41,8 +47,22 @@ _output['{{ var }}'] = {{ var }}
 pickle.dump( _output, open( '{{ params['output_pickle'] }}', 'wb' ) )
 '''
 
+slurm_template = '''
+#!/bin/bash
+#
+#SBATCH --job-name=undead_test
+#SBATCH --output=undead_test.txt
+#
+#SBATCH --ntasks={{ cpus }}
+#SBATCH --time=10:00
+#SBATCH --mem-per-cpu=100
 
-### BEGIN : code borrowed from
+{% for cell_script in cell_scripts %}
+srun {{ interpreter }} {{ cell_script }}
+{%- endfor %}
+'''
+
+### BEGIN : monkeypatch for joblib borrowed from
 ###         https://gist.github.com/MInner/12f9cf961059aed1a60e72c5531a697f
 
 def text_progessbar(seq, total=None):
@@ -78,6 +98,7 @@ def ParallelExecutor( use_bar='tqdm', **joblib_args ) :
 
 @wrap_non_picklable_objects
 class Undead :
+    '''Helper class to assist with execution.'''
     
     def __init__( self, code_cell, debug=False ) :
         self.code_cell  = code_cell
@@ -85,20 +106,26 @@ class Undead :
         self.template   = cell_template
     
     def shuffle( self, run_params ) :
-        
+        '''Locally executes a code cell with given run parameters.'''
+
         return self._execute( self.code_cell, run_params )
     
-    def _execute( self, cell_code, params ) :
-        '''Execute the cell code.'''
+    def moan( self, run_params ) :
+        '''Creates a temporary file for a code cell and returns the name.'''
         
         T = Template( self.template )
         
         # generate the cell-script from the template
         with NamedTemporaryFile( mode='w', suffix='.cell', delete=False ) as f :
-            f.write( T.render( params    = params,
-                               cell_code = cell_code ) )
+            f.write( T.render( params    = run_params,
+                               code_cell = self.code_cell ) )
             
-            cell_script = f.name
+            return f.name
+
+    def _execute( self, cell_code, run_params ) :
+        '''Execute the cell code.'''
+        
+        cell_script = self.moan( run_params )
         
         # execute the cell
         p = subprocess.Popen( [ 'python', str(cell_script) ],
@@ -176,13 +203,15 @@ class SummonUndead( Magics ) :
             print( 'user_input :', user_input )
             print( 'params :', params )
         
-        if not args.mode in [ 'local_serial', 'local_parallel' ] :
+        if not args.mode in [ 'local_serial', 'local_parallel', 'slurm' ] :
             raise NameError( 'Unknown execution mode : %s' % args.mode )
         
         if args.mode == 'local_serial' :
             output_vector = self._execute_local_serial( cell, params, debug=args.debug )
         elif args.mode == 'local_parallel' :
             output_vector = self._execute_local_parallel( cell, params, args.cpus, debug=args.debug )
+        elif args.mode == 'slurm' :
+            output_vector = self._execute_slurm( cell, params, args.cpus, debug=args.debug )
         
         self.shell.push( { args.label + '_output' : output_vector } )
     
@@ -190,7 +219,23 @@ class SummonUndead( Magics ) :
     def summon_undead( self, line ) :
         
         return 'Army of undead summoned. ' 
-    
+   
+    def _execute_slurm( self, code_cell, params, cpus, debug=False ) :
+        '''Execute code cell through slurm.'''
+        
+        if not HAS_PYSLURM :
+            raise Exception( 'pyslurm not installed.' )
+        
+        undead = Undead( code_cell, debug )
+        
+        cell_scripts = [ undead.moan(p) for p in params ]
+        
+        T = Template( slurm_template )
+        return T.render( cpus = cpus,
+                         interpreter = 'python',
+                         cell_scripts = cell_scripts )
+        
+
     def _execute_local_serial( self, cell_code, params, debug=False ) :
         '''Execute code cell locally without concurrency (cpus argument is ignored).'''
         
