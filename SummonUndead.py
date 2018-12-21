@@ -230,12 +230,27 @@ class SummonUndead( Magics ) :
         
         cell_scripts = [ undead.moan(p) for p in params ]
         
-        T = Template( slurm_template )
-        return T.render( cpus = cpus,
-                         interpreter = 'python',
-                         cell_scripts = cell_scripts )
+        # FIXME : we probably shouldn't submit each run individually, but I
+        #         haven't figured out how to submit a single batch script through
+        #         pyslurm yet.
         
+        for n,p in enumerate( params ) :
+            cell_script_file = undead.moan( p )
+            job_command = 'python ' + cell_script_file
+            
+            job_args = { 'wrap' : job_command,
+                         'job_name' : 'undead_' + str(n) }
 
+            job = pyslurm.job().submit_batch_job( job_args )
+            print( job )
+        
+        # not sure how to submit batch scripts through pyslurm yet
+        #
+        #T = Template( slurm_template )
+        #return T.render( cpus = cpus,
+        #                 interpreter = 'python',
+        #                 cell_scripts = cell_scripts )
+        
     def _execute_local_serial( self, cell_code, params, debug=False ) :
         '''Execute code cell locally without concurrency (cpus argument is ignored).'''
         
