@@ -9,7 +9,7 @@ setup(
     long_description = README,
     name             = 'SummonUndead',
     py_modules       = [ 'SummonUndead' ],
-    requires         = [ 'ipython' ],
+    requires         = [ 'ipython', 'joblib', 'tqdm', 'jinja2' ],
     url              = 'https://github.com/ryneches/SummunUndead',
     version          = '0.1'
 )
