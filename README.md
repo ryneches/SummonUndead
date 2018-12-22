@@ -2,6 +2,13 @@
 
 Summons an army of undead.
 
+Sometimes, when you're up in your Tower of Necromancy working on evil plot,
+raising and leading armies of undead horrors on relatively small missions 
+can be a real drag on your productivity. `SummonUndead` takes the hassle out 
+of work-a-day necromantic battle magic, leaving you more time to focus on
+mentoring your mid-tier bosses, dungeon management, and other big-picture
+problems.
+
 ### Installing
 
 `SummonUndead` requires the following Python modules :
