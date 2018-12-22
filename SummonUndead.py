@@ -4,7 +4,7 @@ from IPython.core.magic import Magics, magics_class, line_magic, cell_magic, lin
 from IPython.core.magic_arguments import argument, magic_arguments, parse_argstring
 
 import pickle
-from tempfile import NamedTemporaryFile 
+from tempfile import NamedTemporaryFile, TemporaryDirectory 
 from jinja2 import Template
 
 import types
@@ -28,7 +28,6 @@ except ImportError :
 
 cell_template = '''
 import pickle
-from tempfile import NamedTemporaryFile
 
 {% for module in params['modules'] -%}
 import {{ module }}
@@ -45,6 +44,7 @@ _output = {}
 _output['{{ var }}'] = {{ var }}
 {%- endfor %}
 pickle.dump( _output, open( '{{ params['output_pickle'] }}', 'wb' ) )
+print( 'code cell completed.')
 '''
 
 slurm_template = '''
@@ -100,32 +100,41 @@ def ParallelExecutor( use_bar='tqdm', **joblib_args ) :
 class Undead :
     '''Helper class to assist with execution.'''
     
-    def __init__( self, code_cell, debug=False ) :
+    def __init__( self, code_cell, scratch=None, debug=False ) :
         self.code_cell  = code_cell
         self.debug      = debug
         self.template   = cell_template
-    
+        #self.scratch    = TemporaryDirectory( dir=scratch )
+        self.scratch    = scratch
+
     def shuffle( self, run_params ) :
         '''Locally executes a code cell with given run parameters.'''
-
-        return self._execute( self.code_cell, run_params )
+        
+        stdout, stderr = self._execute( self.code_cell, run_params )
+        return stdout, stderr, run_params
     
     def moan( self, run_params ) :
         '''Creates a temporary file for a code cell and returns the name.'''
         
         T = Template( self.template )
         
+        run_params['output_pickle'] = NamedTemporaryFile( mode='w',
+                                                          suffix='.output', 
+                                                          dir=self.scratch,
+                                                          delete=False ).name
+        
         # generate the cell-script from the template
-        with NamedTemporaryFile( mode='w', suffix='.cell', delete=False ) as f :
+        with NamedTemporaryFile( mode='w', suffix='.cell',
+                                 dir=self.scratch, delete=False ) as f :
             f.write( T.render( params    = run_params,
                                code_cell = self.code_cell ) )
             
-            return f.name
-
+            return f.name, run_params
+    
     def _execute( self, cell_code, run_params ) :
         '''Execute the cell code.'''
         
-        cell_script = self.moan( run_params )
+        cell_script, run_params = self.moan( run_params )
         
         # execute the cell
         p = subprocess.Popen( [ 'python', str(cell_script) ],
@@ -144,19 +153,21 @@ class SummonUndead( Magics ) :
     
     @cell_magic
     @magic_arguments()
-    @argument( '-l', '--label',  type=str,        help='Job label.'                   )
-    @argument( '-n', '--cpus',   type=int,        help='Number of CPUs to use.'       )
-    @argument( '-i', '--params', type=str,        help='Vector of input parameters.'  )
-    @argument( '-o', '--output', action='append', help='Vector of output parameters.' )
-    @argument( '-d', '--debug',  type=bool,       help='Enable debugging output.',
+    @argument( '-l', '--label',   type=str,        help='Job label.'                             )
+    @argument( '-n', '--cpus',    type=int,        help='Number of CPUs to use.'                 )
+    @argument( '-i', '--params',  type=str,        help='Vector of input parameters.'            )
+    @argument( '-o', '--output',  action='append', help='Vector of output parameters.'           )
+    @argument( '-s', '--scratch', type=str,        help='Scratch directory (required for slurm)' )
+    @argument( '-d', '--debug',   type=bool,       help='Enable debugging output.',
                default=False )
-    @argument( '-m', '--mode',   type=str,        help='Execution mode.',
+    @argument( '-m', '--mode',    type=str,        help='Execution mode.',
                default='local_serial' )
     def moan( self, line, cell ) :
         '''Command the zombies to moan horribly.'''
         
         args = parse_argstring( self.moan, line )
-    
+
+        
         # input should be a list of dictionaries
         params = [] 
         if args.params :
@@ -193,7 +204,6 @@ class SummonUndead( Magics ) :
         for run_params in params :
             if args.output :
                 run_params['output_vars'] = ','.join( args.output ).split( ',' )
-                run_params['output_pickle'] = NamedTemporaryFile( mode='w', suffix='.output', delete=False ).name
             else :
                 run_params['output_vars'] = []
                 run_params['output_pickle'] = None
@@ -211,7 +221,9 @@ class SummonUndead( Magics ) :
         elif args.mode == 'local_parallel' :
             output_vector = self._execute_local_parallel( cell, params, args.cpus, debug=args.debug )
         elif args.mode == 'slurm' :
-            output_vector = self._execute_slurm( cell, params, args.cpus, debug=args.debug )
+            if not args.scratch :
+                raise Exception( 'No scratch directory specified.' )
+            output_vector = self._execute_slurm( cell, params, args.cpus, scratch=args.scratch, debug=args.debug )
         
         self.shell.push( { args.label + '_output' : output_vector } )
     
@@ -220,13 +232,13 @@ class SummonUndead( Magics ) :
         
         return 'Army of undead summoned. ' 
    
-    def _execute_slurm( self, code_cell, params, cpus, debug=False ) :
+    def _execute_slurm( self, code_cell, params, cpus, scratch=None, debug=False ) :
         '''Execute code cell through slurm.'''
         
         if not HAS_PYSLURM :
             raise Exception( 'pyslurm not installed.' )
         
-        undead = Undead( code_cell, debug )
+        undead = Undead( code_cell, scratch=scratch, debug=debug )
         
         cell_scripts = [ undead.moan(p) for p in params ]
         
@@ -235,15 +247,17 @@ class SummonUndead( Magics ) :
         #         pyslurm yet.
         
         for n,p in enumerate( params ) :
-            cell_script_file = undead.moan( p )
+            cell_script_file, p = undead.moan( p )
             job_command = 'python ' + cell_script_file
             
             job_args = { 'wrap' : job_command,
                          'job_name' : 'undead_' + str(n) }
-
+            
             job = pyslurm.job().submit_batch_job( job_args )
-            print( job )
-        
+            print( 'job id', job, 'submitted' )
+       
+        return params
+
         # not sure how to submit batch scripts through pyslurm yet
         #
         #T = Template( slurm_template )
@@ -251,10 +265,10 @@ class SummonUndead( Magics ) :
         #                 interpreter = 'python',
         #                 cell_scripts = cell_scripts )
         
-    def _execute_local_serial( self, cell_code, params, debug=False ) :
+    def _execute_local_serial( self, cell_code, params, scratch=None, debug=False ) :
         '''Execute code cell locally without concurrency (cpus argument is ignored).'''
         
-        undead = Undead( cell_code, debug )
+        undead = Undead( cell_code, scratch=scratch, debug=debug )
         #progbar = pyprind.ProgBar( len(params), title='executing in local serial mode...' )
         
         output_vector = []
@@ -262,7 +276,7 @@ class SummonUndead( Magics ) :
             for n,p in enumerate( params ) :
                 progbar.update()
                 
-                stdout, stderr = undead.shuffle( p )
+                stdout, stderr, run_params = undead.shuffle( p )
                 
                 if debug :
                     print( 'stdout {} :'.format(n), stdout )
@@ -273,21 +287,21 @@ class SummonUndead( Magics ) :
         
         return output_vector
 
-    def _execute_local_parallel( self, code_cell, params, cpus, debug=False ) :
+    def _execute_local_parallel( self, code_cell, params, cpus, scratch=None, debug=False ) :
         '''Execute code cell locally with concurrency.'''
         
-        undead = Undead( code_cell, debug=debug )
+        undead = Undead( code_cell, scratch=scratch, debug=debug )
         aprun = ParallelExecutor( n_jobs=cpus )
-
-        r = aprun( total=len(params) )(delayed( undead.shuffle )( p ) for p in params )
         
+        result = aprun( total=len(params) )(delayed( undead.shuffle )( p ) for p in params )
+       
         if debug :
             for stdout, stderr in r :
                 print( 'stdout :', stdout )
                 print( 'stderr :', stderr )
         
         output_vector = []
-        for p in params :
+        for stdout, stderr, p in result :
             
             run_output = pickle.load( open( p['output_pickle'], 'rb' ) )
             output_vector.append( run_output )
