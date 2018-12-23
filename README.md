@@ -1,7 +1,5 @@
 # SummonUndead
 
-Summons an army of undead.
-
 Sometimes, when you're up in your Tower of Necromancy working on some evil,
 raising and leading armies of undead horrors on relatively small missions 
 can be a real drag on your productivity. `SummonUndead` takes the hassle out 
@@ -20,7 +18,7 @@ problems.
 * [pyslurm](https://pyslurm.github.io/)
 
 Note that `pyslurm` [has some packaging issues](https://github.com/PySlurm/pyslurm/issues/102) that
-appear to still be an issue, so you may have to install it directly from its GitHub repo :
+appear to still be a problem, so you may have to install it directly from its GitHub repo :
 
 ```
 $ git clone https://github.com/PySlurm/pyslurm.git
