@@ -47,8 +47,7 @@ pickle.dump( _output, open( '{{ params['output_pickle'] }}', 'wb' ) )
 print( 'code cell completed.')
 '''
 
-slurm_template = '''
-#!/bin/bash
+slurm_template = '''#!/bin/bash
 #
 #SBATCH --job-name=undead_test
 #SBATCH --output=undead_test.txt
@@ -223,7 +222,9 @@ class SummonUndead( Magics ) :
         elif args.mode == 'slurm' :
             if not args.scratch :
                 raise Exception( 'No scratch directory specified.' )
-            output_vector = self._execute_slurm( cell, params, args.cpus, scratch=args.scratch, debug=args.debug )
+            output_vector = self._execute_slurm( cell, params, args.cpus,
+                                                 scratch=args.scratch, job_name=args.label,
+                                                 debug=args.debug )
         
         self.shell.push( { args.label + '_output' : output_vector } )
     
@@ -232,7 +233,9 @@ class SummonUndead( Magics ) :
         
         return 'Army of undead summoned. ' 
    
-    def _execute_slurm( self, code_cell, params, cpus, scratch=None, debug=False ) :
+    def _execute_slurm( self, code_cell, params, cpus, 
+                        scratch=None, job_name='undead', 
+                        debug=False ) :
         '''Execute code cell through slurm.'''
         
         if not HAS_PYSLURM :
@@ -240,31 +243,32 @@ class SummonUndead( Magics ) :
         
         undead = Undead( code_cell, scratch=scratch, debug=debug )
         
-        cell_scripts = [ undead.moan(p) for p in params ]
+        T = Template( slurm_template )
+    
+        cell_scripts, params = list( zip( *[ undead.moan(p) for p in params ] ) )
         
-        # FIXME : we probably shouldn't submit each run individually, but I
-        #         haven't figured out how to submit a single batch script through
-        #         pyslurm yet.
+        slurm_submit_script_path = undead.scratch + '/submit.sh'
         
-        for n,p in enumerate( params ) :
-            cell_script_file, p = undead.moan( p )
-            job_command = 'python ' + cell_script_file
+        with open( slurm_submit_script_path, 'w' ) as f :
+            f.write( T.render( interpreter  = 'python',
+                               cpus         = cpus, 
+                               cell_scripts = cell_scripts ) )
+        
+        job_command = 'bash ' + slurm_submit_script_path
             
-            job_args = { 'wrap' : job_command,
-                         'job_name' : 'undead_' + str(n) }
+        job_args = { 'wrap'        : job_command,
+                     'job_name'    : job_name,
+                     'ntasks'      : cpus,
+                     'time'        : '10:00',
+                     'mem_per_cpu' : 100,
+                     'chdir'       : undead.scratch }
             
-            job = pyslurm.job().submit_batch_job( job_args )
-            print( 'job id', job, 'submitted' )
-       
+        job = pyslurm.job().submit_batch_job( job_args )
+        
+        print( 'job id', job, 'submitted' )
+        
         return params
 
-        # not sure how to submit batch scripts through pyslurm yet
-        #
-        #T = Template( slurm_template )
-        #return T.render( cpus = cpus,
-        #                 interpreter = 'python',
-        #                 cell_scripts = cell_scripts )
-        
     def _execute_local_serial( self, cell_code, params, scratch=None, debug=False ) :
         '''Execute code cell locally without concurrency (cpus argument is ignored).'''
         
