@@ -29,8 +29,8 @@ except ImportError :
 cell_template = '''
 import pickle
 
-{% for module in params['modules'] -%}
-import {{ module }}
+{% for name, module in params['modules'].items() -%}
+import {{ module }} as {{ name }}
 {% endfor %}
 
 {% for name, value in params['input_vars'].items() %}
@@ -194,8 +194,9 @@ class SummonUndead( Magics ) :
                 raise NameError( "name '%s' is not defined" % args.input )
         
         # figure out what modules the user has loaded
-        modules = set( key for key,value in self.shell.user_ns.items() if isinstance( value, types.ModuleType ) )
-        modules = modules - set( [ '__builtin__', '__builtins__' ] )
+        modules = { key : value.__name__ for key,value in self.shell.user_ns.items() if isinstance( value, types.ModuleType ) }
+        modules.pop( '__builtin__'  )
+        modules.pop( '__builtins__' )
         
         # populate the params vector with output variable names, 
         # paths to temporary files for pickled output, and the
