@@ -55,6 +55,10 @@ slurm_template = '''#!/bin/bash
 #SBATCH --ntasks={{ cpus }}
 #SBATCH --time=10:00
 #SBATCH --mem-per-cpu=100
+#
+#SBATCH -C haswell
+#SBATCH -A m342
+#SBATCH --qos=debug
 
 {% for cell_script in cell_scripts %}
 srun {{ interpreter }} {{ cell_script }}
