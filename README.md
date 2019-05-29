@@ -23,6 +23,7 @@ appear to still be a problem, so you may have to install it directly from its Gi
 ```
 $ git clone https://github.com/PySlurm/pyslurm.git
 $ cd pyslurm
+$ git checkout 18.08.0 # skip this step if your site uses slurm version 17.11
 $ python ./setup.py build
 $ python ./setup.py install
 ```
