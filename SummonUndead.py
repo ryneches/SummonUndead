@@ -11,6 +11,7 @@ import types
 
 import subprocess
 import time
+import os
 
 from joblib.externals.loky import set_loky_pickler
 from joblib import parallel_backend
@@ -261,19 +262,42 @@ class SummonUndead( Magics ) :
         
         job_command = 'bash ' + slurm_submit_script_path
             
-        job_args = { 'wrap'        : job_command,
+        job_args = { 'script'      : job_command,
                      'job_name'    : job_name,
                      'ntasks'      : cpus,
                      'time'        : '10:00',
                      'mem_per_cpu' : 100,
                      'chdir'       : undead.scratch }
-            
-        job = pyslurm.job().submit_batch_job( job_args )
         
-        print( 'job id', job, 'submitted' )
+        # pyslurm still ignores SBATCH directives on cori, so
+        # we'll do this the ugly way until it gets fixed :-(
+        #
+        #job = pyslurm.job().submit_batch_job( job_args )
+        #
+        #print( 'job id', job, 'submitted' )
+       
+        subprocess.call( [ 'sbatch', slurm_submit_script_path ] )
+        print( 'job submitted.' )
         
-        return params
-
+        # monitor job completion
+        # FIXME : this should query the slurm API instead of polling output files
+        with tqdm( total=len( params ) ) as progbar :
+            output_files  = [ p['output_pickle'] for p in params ]
+            output_vector = []
+            while len( output_vector ) < len( params ) :
+                for path in output_files :
+                    if os.path.isfile( path ) :
+                        if os.stat( path ).st_size > 0 :
+                            try :
+                                output_vector.append( pickle.load( open( path, 'rb' ) ) )
+                                output_files.remove( path )
+                                progbar.update()
+                            except EOFError as e :
+                                print( e, path )
+                time.sleep( 0.5 )
+        
+        return output_vector
+    
     def _execute_local_serial( self, cell_code, params, scratch=None, debug=False ) :
         '''Execute code cell locally without concurrency (cpus argument is ignored).'''
         
